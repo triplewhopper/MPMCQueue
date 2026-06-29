@@ -29,6 +29,7 @@ SOFTWARE.
 #include <memory>
 #include <new> // std::hardware_destructive_interference_size
 #include <stdexcept>
+#include <utility>
 
 #ifndef __cpp_aligned_new
 #ifdef _WIN32
@@ -92,20 +93,29 @@ template <typename T> struct Slot {
   template <typename... Args> void construct(Args &&...args) noexcept {
     static_assert(std::is_nothrow_constructible<T, Args &&...>::value,
                   "T must be nothrow constructible with Args&&...");
-    new (&storage) T(std::forward<Args>(args)...);
+    new (storage) T(std::forward<Args>(args)...);
   }
 
   void destroy() noexcept {
     static_assert(std::is_nothrow_destructible<T>::value,
                   "T must be nothrow destructible");
-    reinterpret_cast<T *>(&storage)->~T();
+    ptr()->~T();
   }
 
-  T &&move() noexcept { return reinterpret_cast<T &&>(storage); }
+  T &&move() noexcept { return std::move(*ptr()); }
 
   // Align to avoid false sharing between adjacent slots
   alignas(hardwareInterferenceSize) std::atomic<size_t> turn = {0};
-  typename std::aligned_storage<sizeof(T), alignof(T)>::type storage;
+  alignas(T) std::byte storage[sizeof(T)];
+
+private:
+  T *ptr() noexcept {
+#if __cpp_lib_launder >= 201606
+    return std::launder(reinterpret_cast<T *>(storage));
+#else
+    return reinterpret_cast<T *>(storage);
+#endif
+  }
 };
 
 template <typename T, typename Allocator = AlignedAllocator<Slot<T>>>
