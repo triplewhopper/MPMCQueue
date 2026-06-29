@@ -49,6 +49,11 @@ static constexpr size_t hardwareInterferenceSize =
 static constexpr size_t hardwareInterferenceSize = 64;
 #endif
 
+template <typename T>
+concept Element = std::is_nothrow_destructible_v<T> &&
+                  (std::is_nothrow_copy_assignable_v<T> ||
+                   std::is_nothrow_move_assignable_v<T>);
+
 #if defined(__cpp_aligned_new)
 template <typename T> using AlignedAllocator = std::allocator<T>;
 #else
@@ -84,24 +89,22 @@ template <typename T> struct AlignedAllocator {
 };
 #endif
 
-template <typename T> struct Slot {
+template <typename T>
+  requires std::is_nothrow_destructible_v<T>
+struct Slot {
   ~Slot() noexcept {
     if (turn & 1) {
       destroy();
     }
   }
 
-  template <typename... Args> void construct(Args &&...args) noexcept {
-    static_assert(std::is_nothrow_constructible<T, Args &&...>::value,
-                  "T must be nothrow constructible with Args&&...");
+  template <typename... Args>
+    requires std::is_nothrow_constructible_v<T, Args &&...>
+  void construct(Args &&...args) noexcept {
     new (storage) T(std::forward<Args>(args)...);
   }
 
-  void destroy() noexcept {
-    static_assert(std::is_nothrow_destructible<T>::value,
-                  "T must be nothrow destructible");
-    ptr()->~T();
-  }
+  void destroy() noexcept { ptr()->~T(); }
 
   T &&move() noexcept { return std::move(*ptr()); }
 
@@ -119,16 +122,8 @@ private:
   }
 };
 
-template <typename T, typename Allocator = AlignedAllocator<Slot<T>>>
+template <Element T, typename Allocator = AlignedAllocator<Slot<T>>>
 class Queue {
-private:
-  static_assert(std::is_nothrow_copy_assignable<T>::value ||
-                    std::is_nothrow_move_assignable<T>::value,
-                "T must be nothrow copy or move assignable");
-
-  static_assert(std::is_nothrow_destructible<T>::value,
-                "T must be nothrow destructible");
-
 public:
   explicit Queue(const size_t capacity,
                  const Allocator &allocator = Allocator())
@@ -174,9 +169,9 @@ public:
   Queue(const Queue &) = delete;
   Queue &operator=(const Queue &) = delete;
 
-  template <typename... Args> void emplace(Args &&...args) noexcept {
-    static_assert(std::is_nothrow_constructible<T, Args &&...>::value,
-                  "T must be nothrow constructible with Args&&...");
+  template <typename... Args>
+    requires std::is_nothrow_constructible_v<T, Args &&...>
+  void emplace(Args &&...args) noexcept {
     auto const head = head_.fetch_add(1);
     auto &slot = slots_[idx(head)];
     while (turn(head) * 2 != slot.turn.load(std::memory_order_acquire))
@@ -185,9 +180,9 @@ public:
     slot.turn.store(turn(head) * 2 + 1, std::memory_order_release);
   }
 
-  template <typename... Args> bool try_emplace(Args &&...args) noexcept {
-    static_assert(std::is_nothrow_constructible<T, Args &&...>::value,
-                  "T must be nothrow constructible with Args&&...");
+  template <typename... Args>
+    requires std::is_nothrow_constructible_v<T, Args &&...>
+  bool try_emplace(Args &&...args) noexcept {
     auto head = head_.load(std::memory_order_acquire);
     for (;;) {
       auto &slot = slots_[idx(head)];
@@ -207,28 +202,26 @@ public:
     }
   }
 
-  void push(const T &v) noexcept {
-    static_assert(std::is_nothrow_copy_constructible<T>::value,
-                  "T must be nothrow copy constructible");
+  void push(const T &v) noexcept
+    requires std::is_nothrow_copy_constructible_v<T>
+  {
     emplace(v);
   }
 
-  template <typename P,
-            typename = typename std::enable_if<
-                std::is_nothrow_constructible<T, P &&>::value>::type>
+  template <typename P>
+    requires std::is_nothrow_constructible_v<T, P &&>
   void push(P &&v) noexcept {
     emplace(std::forward<P>(v));
   }
 
-  bool try_push(const T &v) noexcept {
-    static_assert(std::is_nothrow_copy_constructible<T>::value,
-                  "T must be nothrow copy constructible");
+  bool try_push(const T &v) noexcept
+    requires std::is_nothrow_copy_constructible_v<T>
+  {
     return try_emplace(v);
   }
 
-  template <typename P,
-            typename = typename std::enable_if<
-                std::is_nothrow_constructible<T, P &&>::value>::type>
+  template <typename P>
+    requires std::is_nothrow_constructible_v<T, P &&>
   bool try_push(P &&v) noexcept {
     return try_emplace(std::forward<P>(v));
   }
@@ -299,7 +292,7 @@ private:
 };
 } // namespace mpmc
 
-template <typename T,
+template <mpmc::Element T,
           typename Allocator = mpmc::AlignedAllocator<mpmc::Slot<T>>>
 using MPMCQueue = mpmc::Queue<T, Allocator>;
 

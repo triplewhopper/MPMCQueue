@@ -64,9 +64,8 @@ t2.join();
 
 - `template <typename P> void push(P &&v);`
 
-  Enqueue an item using move construction. Participates in overload
-  resolution only if `std::is_nothrow_constructible<T, P&&>::value ==
-  true`. Blocks if queue is full.
+  Enqueue an item using move construction. Requires `T` to be nothrow
+  constructible from `P&&`. Blocks if queue is full.
 
 - `bool try_push(const T &v);`
 
@@ -75,10 +74,9 @@ t2.join();
 
 - `template <typename P> bool try_push(P &&v);`
 
-  Try to enqueue an item using move construction. Participates in
-  overload resolution only if `std::is_nothrow_constructible<T,
-  P&&>::value == true`. Returns `true` on success and `false` if queue
-  is full.
+  Try to enqueue an item using move construction. Requires `T` to be
+  nothrow constructible from `P&&`. Returns `true` on success and
+  `false` if queue is full.
 
 - `void pop(T &v);`
 
@@ -149,7 +147,7 @@ implementation:
 - [X] Add allocator supports so that the queue could be used with huge pages and
   shared memory
 - [ ] Add benchmarks and compare to `boost::lockfree::queue` and others
-- [ ] Use C++20 concepts instead of `static_assert` if available
+- [X] Use C++20 concepts instead of `static_assert` if available
 - [X] Use `std::hardware_destructive_interference_size` if available
 - [ ] Add API for zero-copy deqeue and batch dequeue operations
 - [ ] Add `[[nodiscard]]` attributes
