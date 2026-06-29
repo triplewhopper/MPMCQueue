@@ -74,6 +74,7 @@ int main(int argc, char *argv[]) {
 
   {
     MPMCQueue<TestType> q(11);
+    assert(q.capacity() == 11);
     assert(q.size() == 0 && q.empty());
     for (int i = 0; i < 10; i++) {
       q.emplace();

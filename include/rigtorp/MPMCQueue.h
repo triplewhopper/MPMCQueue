@@ -296,6 +296,9 @@ public:
   /// until all reader and writer threads have been joined.
   bool empty() const noexcept { return size() <= 0; }
 
+  /// Returns the queue capacity.
+  size_t capacity() const noexcept { return capacity_; }
+
 private:
   constexpr size_t idx(size_t i) const noexcept { return i % capacity_; }
 
