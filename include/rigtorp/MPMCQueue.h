@@ -29,6 +29,7 @@ SOFTWARE.
 #include <memory>
 #include <new> // std::hardware_destructive_interference_size
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 #ifndef __cpp_aligned_new
