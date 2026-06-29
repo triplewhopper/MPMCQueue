@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         config: [Debug, Release]
-        standard: [17]
+        standard: [20]
 
     steps:
     - uses: actions/checkout@v1
@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         config: [Debug, Release]
-        standard: [17]
+        standard: [20]
     
     steps:
     - uses: actions/checkout@v1
@@ -45,7 +45,7 @@ jobs:
     strategy:
       matrix:
         config: [Debug, Release]
-        standard: [17]
+        standard: [20]
 
     steps:
     - uses: actions/checkout@v1
