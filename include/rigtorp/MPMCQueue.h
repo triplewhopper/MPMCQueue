@@ -32,6 +32,15 @@ SOFTWARE.
 #include <type_traits>
 #include <utility>
 
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) ||            \
+    defined(_M_X64)
+#include <immintrin.h> // _mm_pause
+#endif
+
+#if defined(_MSC_VER) && defined(_M_ARM64)
+#include <intrin.h> // __yield
+#endif
+
 #ifndef __cpp_aligned_new
 #ifdef _WIN32
 #include <malloc.h> // _aligned_malloc
@@ -48,6 +57,19 @@ static constexpr size_t hardwareInterferenceSize =
 #else
 static constexpr size_t hardwareInterferenceSize = 64;
 #endif
+
+inline void spinWait() noexcept {
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) ||            \
+    defined(_M_X64)
+  _mm_pause();
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#if defined(_MSC_VER)
+  __yield();
+#else
+  __asm__ __volatile__("yield");
+#endif
+#endif
+}
 
 template <typename T>
 concept Element = std::is_nothrow_destructible_v<T> &&
@@ -174,8 +196,9 @@ public:
   void emplace(Args &&...args) noexcept {
     auto const head = head_.fetch_add(1);
     auto &slot = slots_[idx(head)];
-    while (turn(head) * 2 != slot.turn.load(std::memory_order_acquire))
-      ;
+    while (turn(head) * 2 != slot.turn.load(std::memory_order_acquire)) {
+      spinWait();
+    }
     slot.construct(std::forward<Args>(args)...);
     slot.turn.store(turn(head) * 2 + 1, std::memory_order_release);
   }
@@ -229,8 +252,9 @@ public:
   void pop(T &v) noexcept {
     auto const tail = tail_.fetch_add(1);
     auto &slot = slots_[idx(tail)];
-    while (turn(tail) * 2 + 1 != slot.turn.load(std::memory_order_acquire))
-      ;
+    while (turn(tail) * 2 + 1 != slot.turn.load(std::memory_order_acquire)) {
+      spinWait();
+    }
     v = slot.move();
     slot.destroy();
     slot.turn.store(turn(tail) * 2 + 2, std::memory_order_release);
