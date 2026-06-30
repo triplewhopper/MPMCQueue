@@ -107,6 +107,46 @@ int main(int argc, char *argv[]) {
     assert(q.size() == 0 && q.empty());
   }
 
+  {
+    MPMCQueue<int> q(2);
+    bool called = false;
+    q.emplace_with(
+        [&](size_t head, int &v) noexcept {
+          assert(head == 0);
+          v = 42;
+          called = true;
+        },
+        1);
+    assert(called == true);
+
+    int t = 0;
+    q.pop(t);
+    assert(t == 42);
+  }
+
+  {
+    MPMCQueue<int> q(1);
+    bool called = false;
+    assert(q.try_emplace_with(
+               [&](size_t head, int &v) noexcept {
+                 assert(head == 0);
+                 v = 7;
+                 called = true;
+               },
+               1) == true);
+    assert(called == true);
+
+    bool failedCalled = false;
+    assert(
+        q.try_emplace_with([&](size_t, int &) noexcept { failedCalled = true; },
+                           2) == false);
+    assert(failedCalled == false);
+
+    int t = 0;
+    q.pop(t);
+    assert(t == 7);
+  }
+
   // Copyable only type
   {
     struct Test {

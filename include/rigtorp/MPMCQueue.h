@@ -25,6 +25,7 @@ SOFTWARE.
 #include <atomic>
 #include <cassert>
 #include <cstddef> // offsetof
+#include <functional>
 #include <limits>
 #include <memory>
 #include <new> // std::hardware_destructive_interference_size
@@ -122,8 +123,9 @@ struct Slot {
 
   template <typename... Args>
     requires std::is_nothrow_constructible_v<T, Args &&...>
-  void construct(Args &&...args) noexcept {
+  T &construct(Args &&...args) noexcept {
     new (storage) T(std::forward<Args>(args)...);
+    return *ptr();
   }
 
   void destroy() noexcept { ptr()->~T(); }
@@ -191,27 +193,31 @@ public:
   Queue(const Queue &) = delete;
   Queue &operator=(const Queue &) = delete;
 
-  template <typename... Args>
-    requires std::is_nothrow_constructible_v<T, Args &&...>
-  void emplace(Args &&...args) noexcept {
+  template <typename F, typename... Args>
+    requires(std::is_nothrow_invocable_v<F &&, size_t, T &> &&
+             std::is_nothrow_constructible_v<T, Args &&...>)
+  void emplace_with(F &&f, Args &&...args) noexcept {
     auto const head = head_.fetch_add(1);
     auto &slot = slots_[idx(head)];
     while (turn(head) * 2 != slot.turn.load(std::memory_order_acquire)) {
       spinWait();
     }
-    slot.construct(std::forward<Args>(args)...);
+    auto &v = slot.construct(std::forward<Args>(args)...);
+    std::invoke(std::forward<F>(f), head, v);
     slot.turn.store(turn(head) * 2 + 1, std::memory_order_release);
   }
 
-  template <typename... Args>
-    requires std::is_nothrow_constructible_v<T, Args &&...>
-  bool try_emplace(Args &&...args) noexcept {
+  template <typename F, typename... Args>
+    requires(std::is_nothrow_invocable_v<F &&, size_t, T &> &&
+             std::is_nothrow_constructible_v<T, Args &&...>)
+  bool try_emplace_with(F &&f, Args &&...args) noexcept {
     auto head = head_.load(std::memory_order_acquire);
     for (;;) {
       auto &slot = slots_[idx(head)];
       if (turn(head) * 2 == slot.turn.load(std::memory_order_acquire)) {
         if (head_.compare_exchange_strong(head, head + 1)) {
-          slot.construct(std::forward<Args>(args)...);
+          auto &v = slot.construct(std::forward<Args>(args)...);
+          std::invoke(std::forward<F>(f), head, v);
           slot.turn.store(turn(head) * 2 + 1, std::memory_order_release);
           return true;
         }
@@ -223,6 +229,19 @@ public:
         }
       }
     }
+  }
+
+  template <typename... Args>
+    requires std::is_nothrow_constructible_v<T, Args &&...>
+  void emplace(Args &&...args) noexcept {
+    emplace_with([](size_t, T &) noexcept {}, std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+    requires std::is_nothrow_constructible_v<T, Args &&...>
+  bool try_emplace(Args &&...args) noexcept {
+    return try_emplace_with([](size_t, T &) noexcept {},
+                            std::forward<Args>(args)...);
   }
 
   void push(const T &v) noexcept
