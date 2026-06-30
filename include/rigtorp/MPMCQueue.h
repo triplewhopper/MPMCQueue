@@ -279,13 +279,15 @@ public:
     slot.turn.store(turn(tail) * 2 + 2, std::memory_order_release);
   }
 
-  bool try_pop(T &v) noexcept {
+  template <typename F>
+    requires std::is_nothrow_invocable_v<F &&, T &&>
+  bool try_pop_with(F &&f) noexcept {
     auto tail = tail_.load(std::memory_order_acquire);
     for (;;) {
       auto &slot = slots_[idx(tail)];
       if (turn(tail) * 2 + 1 == slot.turn.load(std::memory_order_acquire)) {
         if (tail_.compare_exchange_strong(tail, tail + 1)) {
-          v = slot.move();
+          std::invoke(std::forward<F>(f), slot.move());
           slot.destroy();
           slot.turn.store(turn(tail) * 2 + 2, std::memory_order_release);
           return true;
@@ -298,6 +300,10 @@ public:
         }
       }
     }
+  }
+
+  bool try_pop(T &v) noexcept {
+    return try_pop_with([&](T &&x) noexcept { v = std::move(x); });
   }
 
   /// Returns the number of elements in the queue.

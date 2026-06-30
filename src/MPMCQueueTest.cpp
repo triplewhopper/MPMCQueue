@@ -25,6 +25,7 @@ SOFTWARE.
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <rigtorp/MPMCQueue.h>
 #include <set>
 #include <thread>
@@ -145,6 +146,28 @@ int main(int argc, char *argv[]) {
     int t = 0;
     q.pop(t);
     assert(t == 7);
+  }
+
+  {
+    MPMCQueue<std::unique_ptr<int>> q(1);
+    q.emplace(std::unique_ptr<int>(new int(42)));
+
+    bool called = false;
+    std::unique_ptr<int> t;
+    assert(q.try_pop_with([&](std::unique_ptr<int> &&v) noexcept {
+      called = true;
+      t = std::move(v);
+    }) == true);
+    assert(called == true);
+    assert(t != nullptr && *t == 42);
+    assert(q.size() == 0 && q.empty());
+
+    called = false;
+    assert(q.try_pop_with([&](std::unique_ptr<int> &&) noexcept {
+      called = true;
+    }) == false);
+    assert(called == false);
+    assert(q.size() == 0 && q.empty());
   }
 
   // Copyable only type
